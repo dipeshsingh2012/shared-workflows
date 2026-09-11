@@ -4,23 +4,31 @@ Central repository hosting reusable GitHub Actions workflows for **Hiljhil Roast
 
 ---
 
+## ⚡ Highlights
+
+* **100% Keyless GCP Deployment**: Uses **Workload Identity Federation (WIF)**. Repositories in your account require **ZERO secrets** to deploy to Google Cloud Storage.
+* **Instant Onboarding**: Any new or existing MFE repository needs only a ~15 line workflow file.
+* **Smart Cache-Control**: Automatically invalidates `remoteEntry.js` (`no-cache, no-store, must-revalidate`) while serving immutable hashed chunks with 1-year caching.
+
+---
+
 ## 📦 Available Workflows
 
 | Workflow | File Path | Use Case |
 | :--- | :--- | :--- |
-| **Deploy MFE to GCS** | [`.github/workflows/deploy-mfe-gcs.yml`](.github/workflows/deploy-mfe-gcs.yml) | Builds Vite/Webpack/Next.js MFEs, authenticates with Google Cloud, syncs bundle to GCS bucket (`gs://mycommerce/`), and applies strict `no-cache` headers on `remoteEntry.js`. |
+| **Deploy MFE to GCS** | [`.github/workflows/deploy-mfe-gcs.yml`](.github/workflows/deploy-mfe-gcs.yml) | Builds Vite/Webpack/Next.js MFEs, keylessly authenticates to GCP via WIF, syncs bundle to GCS bucket (`gs://mycommerce/`), and applies strict `no-cache` headers on `remoteEntry.js`. |
 | **MFE CI Validation** | [`.github/workflows/mfe-ci.yml`](.github/workflows/mfe-ci.yml) | Installs dependencies, runs TypeScript type-checking (`tsc --noEmit`), and verifies production builds for Pull Requests. |
 
 ---
 
 ## 🚀 Quickstart: How to Use in Any MFE Repository
 
-### 1. Reusable MFE Deployment to Google Cloud Storage
+### 1. Keyless MFE Deployment to Google Cloud Storage
 
 Add this file to your MFE repository at `.github/workflows/deploy.yml`:
 
 ```yaml
-name: Deploy MFE
+name: Deploy MFE to GCS
 
 on:
   push:
@@ -28,18 +36,21 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write    # Required for keyless Workload Identity Federation
+
 jobs:
   deploy:
     uses: dipeshsingh2012/shared-workflows/.github/workflows/deploy-mfe-gcs.yml@main
     with:
-      dest_dir: 'mfes/<your-mfe-name>'   # e.g. mfes/testimonials-ui, mfes/cart-ui, mfes/counter-check
-      bucket: 'mycommerce'              # optional, defaults to 'mycommerce'
-      node_version: '20'                # optional, defaults to '20'
-      build_command: 'npm run build'    # optional, defaults to 'npm run build'
-      dist_dir: 'dist'                  # optional, defaults to 'dist'
-    secrets:
-      gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
+      dest_dir: 'mfes/<your-mfe-name>'   # e.g. mfes/testimonials-ui, mfes/counter-check, mfes/cart-ui
 ```
+
+> [!NOTE]
+> **No Secrets Required**: Because Workload Identity Federation is pre-configured at the account level (`attribute.repository_owner == 'dipeshsingh2012'`), you do **not** need to add any secrets under GitHub repository settings!
+
+---
 
 ### 2. Reusable MFE Pull Request CI Check
 
@@ -63,7 +74,7 @@ jobs:
 
 ---
 
-## ⚙️ Workflow Inputs & Secrets
+## ⚙️ Workflow Inputs Reference
 
 ### `deploy-mfe-gcs.yml`
 
@@ -77,22 +88,21 @@ jobs:
 | `dist_dir` | No | `dist` | Local directory containing build artifacts. |
 | `cache_control_remote_entry` | No | `no-cache, no-store, must-revalidate` | Cache-Control header applied to `remoteEntry.js`. |
 | `cache_control_html` | No | `no-cache, no-store, must-revalidate` | Cache-Control header applied to `index.html`. |
+| `workload_identity_provider` | No | `projects/518971663061/.../providers/github-provider` | GCP Workload Identity Provider resource URI. |
+| `service_account` | No | `gh-actions-deployer@mycommerce-508208.iam.gserviceaccount.com` | Service account to impersonate. |
 
-#### Secrets (`secrets:`)
+#### Optional Secrets (Fallback Only)
 | Name | Required | Description |
 | :--- | :---: | :--- |
-| `gcp_sa_key` | Optional* | JSON string of the GCP Service Account Key (`roles/storage.objectAdmin`). |
-| `gcp_workload_identity_provider` | Optional* | Workload Identity Provider resource URI (if not using key). |
-| `gcp_service_account` | Optional | Service account email when using Workload Identity. |
-
-*\*At least one authentication mechanism (`gcp_sa_key` or `gcp_workload_identity_provider`) is required.*
+| `gcp_sa_key` | No | Legacy JSON key string (only needed if bypassing Workload Identity Federation). |
 
 ---
 
-## 🔒 Security & Access Configuration
+## 🔒 Security Architecture (Workload Identity Federation)
 
-For private repositories to call workflows in this repository:
-1. Go to **Settings > Actions > General** in the `shared-workflows` repository.
-2. Scroll to **Access**.
-3. Select **Accessible from repositories in the 'dipeshsingh2012' organization / user account**.
-*(If the repository is public, it works automatically without any extra permissions configuration).*
+* **GCP Project**: `mycommerce-508208`
+* **GCP Project Number**: `518971663061`
+* **Workload Identity Pool**: `github-actions-pool`
+* **Provider**: `github-provider` (`https://token.actions.githubusercontent.com`)
+* **Policy Binding**: Any repository owned by `dipeshsingh2012` is authorized to impersonate `gh-actions-deployer@mycommerce-508208.iam.gserviceaccount.com`.
+* **Zero Long-Lived Keys**: Tokens are ephemeral OIDC assertions minted by GitHub and exchanged via Google STS, expiring automatically after workflow completion.

@@ -1,45 +1,45 @@
-# MFE Deployment Guide: Google Cloud Storage & Module Federation
+# MFE Deployment Guide: Google Cloud Storage & Keyless Module Federation
 
-This guide explains how each micro-frontend in the Hiljhil Roasters / MyCommerce architecture deploys its remote bundle to Google Cloud Storage.
+This guide explains how each micro-frontend in the Hiljhil Roasters / MyCommerce architecture deploys its remote bundle to Google Cloud Storage keylessly without needing any secrets in child repositories.
 
 ---
 
 ## Architecture Overview
 
 ```
-[ Developer Git Push ]
-          │
-          ▼
-[ GitHub Actions Runner ]
-          │
-    (npm run build)
-          │
-          ▼
-   dist/
-   ├── assets/
-   │   ├── remoteEntry.js  <── Cache-Control: no-cache, no-store, must-revalidate
-   │   └── *.[hash].js     <── Cache-Control: public, max-age=31536000, immutable
-   └── index.html          <── Cache-Control: no-cache, must-revalidate
-          │
-          ▼
-[ gcloud storage rsync ]
-          │
-          ▼
-[ GCS Bucket: gs://mycommerce/mfes/<mfe-name>/ ]
-          │
-          ▼ (HTTP/2 with CORS: *)
-https://storage.googleapis.com/mycommerce/mfes/<mfe-name>/assets/remoteEntry.js
-          │
-          ▼
-[ Storefront Host: mycommerce (Port 5170) ]
+[ Developer Git Push (Any MFE Repo) ]
+                   │
+                   ▼
+       [ GitHub Actions Runner ]
+                   │
+                   ├─► (npm install & npm run build)
+                   │
+                   ├─► Mint GitHub OIDC Token (id-token: write)
+                   │
+                   ▼
+   [ GCP Security Token Service (STS) ]
+                   │
+ (Validates repository_owner == "dipeshsingh2012")
+                   │
+                   ▼
+  [ Impersonates gh-actions-deployer SA ]
+  (Zero secrets stored in the MFE repo!)
+                   │
+                   ▼
+ [ gcloud storage rsync dist/ to gs://mycommerce/mfes/<mfe>/ ]
+                   │
+                   ▼
+ https://storage.googleapis.com/mycommerce/mfes/<mfe>/assets/remoteEntry.js
+                   │
+                   ▼
+      [ Storefront Host: mycommerce ]
 ```
 
 ---
 
-## Adding GCS Deployment to an Existing MFE
+## Adding GCS Deployment to Any MFE
 
-### Step 1: Add Workflow File
-In the MFE repository root, create `.github/workflows/deploy.yml`:
+In your MFE repository root, create `.github/workflows/deploy.yml`:
 
 ```yaml
 name: Deploy MFE to GCS
@@ -50,29 +50,15 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   deploy:
     uses: dipeshsingh2012/shared-workflows/.github/workflows/deploy-mfe-gcs.yml@main
     with:
-      dest_dir: mfes/<your-mfe-name>
-      bucket: mycommerce
-    secrets:
-      gcp_sa_key: ${{ secrets.GCP_SA_KEY }}
+      dest_dir: 'mfes/<your-mfe-name>'
 ```
 
-### Step 2: Configure GitHub Repository Secrets
-Under your MFE repository **Settings > Secrets and variables > Actions**:
-1. Add Secret `GCP_SA_KEY` with the JSON content of your GCP deployer service account key.
-
-### Step 3: Register in Host (`mycommerce`)
-In `/home/dipes/projects/mycommerce`:
-1. Add remote definition in `vite.config.ts`:
-   ```ts
-   remotes: {
-     'my-mfe': isProd
-       ? 'https://storage.googleapis.com/mycommerce/mfes/<your-mfe-name>/assets/remoteEntry.js'
-       : 'http://localhost:<port>/assets/remoteEntry.js',
-   }
-   ```
-2. Add type definition in `src/remotes.d.ts`.
-3. Import and consume the exposed fragment in your host component.
+**That is all!** No secrets need to be added to your repository settings.
