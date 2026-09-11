@@ -52,9 +52,6 @@ jobs:
   deploy:
     name: Build & Deploy to GCS
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     env:
       GCP_SA_KEY: ${{ secrets.gcp_sa_key }}
       WIF_PROVIDER: ${{ secrets.gcp_workload_identity_provider }}
