@@ -1,0 +1,19 @@
+# OS & Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Local keys and credentials
+*.key
+*.pem
+*.json
+!package.json
+!tsconfig*.json
+!package-lock.json
+
+# Temporary files
+tmp/
+*.log

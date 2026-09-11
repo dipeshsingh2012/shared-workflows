@@ -1,0 +1,56 @@
+name: Reusable MFE CI (Lint, Typecheck & Build)
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: 'Node.js version'
+        required: false
+        default: '20'
+        type: string
+      build_command:
+        description: 'Command to test production build'
+        required: false
+        default: 'npm run build'
+        type: string
+      run_typecheck:
+        description: 'Whether to run tsc type checking'
+        required: false
+        default: true
+        type: boolean
+      typecheck_command:
+        description: 'Command to run TypeScript checks'
+        required: false
+        default: 'npx tsc --noEmit'
+        type: string
+
+jobs:
+  ci:
+    name: Lint, Typecheck & Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run Type Check
+        if: ${{ inputs.run_typecheck }}
+        run: ${{ inputs.typecheck_command }}
+
+      - name: Run Production Build
+        run: ${{ inputs.build_command }}
