@@ -63,9 +63,12 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          if [ -f package-lock.json ]; then
-            echo "Found package-lock.json. Running npm ci..."
-            npm ci
+          if grep -q '"resolved": "\.\.' package-lock.json 2>/dev/null; then
+            echo "Detected local workspace paths in package-lock.json. Running npm install from registry..."
+            npm install
+          elif [ -f package-lock.json ]; then
+            echo "Found clean package-lock.json. Running npm ci..."
+            npm ci || npm install
           else
             echo "No package-lock.json found. Running npm install..."
             npm install
