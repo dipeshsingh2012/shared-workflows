@@ -37,15 +37,19 @@ on:
         required: false
         default: 'no-cache, no-store, must-revalidate'
         type: string
+      workload_identity_provider:
+        description: 'GCP Workload Identity Provider resource URI (Default: Hiljhil/MyCommerce GitHub pool)'
+        required: false
+        default: 'projects/518971663061/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+        type: string
+      service_account:
+        description: 'GCP Service Account to impersonate via Workload Identity'
+        required: false
+        default: 'gh-actions-deployer@mycommerce-508208.iam.gserviceaccount.com'
+        type: string
     secrets:
       gcp_sa_key:
-        description: 'GCP Service Account JSON Key'
-        required: false
-      gcp_workload_identity_provider:
-        description: 'GCP Workload Identity Provider ID'
-        required: false
-      gcp_service_account:
-        description: 'GCP Service Account email (used with Workload Identity)'
+        description: 'Optional GCP Service Account JSON Key (fallback if not using Workload Identity)'
         required: false
 
 jobs:
@@ -54,8 +58,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GCP_SA_KEY: ${{ secrets.gcp_sa_key }}
-      WIF_PROVIDER: ${{ secrets.gcp_workload_identity_provider }}
-      WIF_SA: ${{ secrets.gcp_service_account }}
+      WIF_PROVIDER: ${{ inputs.workload_identity_provider }}
+      WIF_SA: ${{ inputs.service_account }}
 
     steps:
       - name: Checkout Code
@@ -79,26 +83,18 @@ jobs:
       - name: Build MFE Bundle
         run: ${{ inputs.build_command }}
 
-      - name: Verify GCP Authentication Secrets
-        run: |
-          if [ -z "$GCP_SA_KEY" ] && [ -z "$WIF_PROVIDER" ]; then
-            echo "::error::No GCP credentials supplied! Please pass 'gcp_sa_key' or 'gcp_workload_identity_provider' in secrets."
-            exit 1
-          fi
-          echo "Valid GCP credentials supplied."
-
-      - name: Authenticate to Google Cloud (Service Account Key)
-        if: ${{ env.GCP_SA_KEY != '' }}
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ env.GCP_SA_KEY }}
-
-      - name: Authenticate to Google Cloud (Workload Identity)
+      - name: Authenticate to Google Cloud (Workload Identity Federation - Keyless)
         if: ${{ env.GCP_SA_KEY == '' && env.WIF_PROVIDER != '' }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
           service_account: ${{ env.WIF_SA }}
+
+      - name: Authenticate to Google Cloud (Service Account Key Fallback)
+        if: ${{ env.GCP_SA_KEY != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ env.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -136,7 +132,7 @@ jobs:
           fi
 
           echo "============================================================"
-          echo "Deployment successful!"
+          echo "Deployment successful via Workload Identity!"
           echo "Bucket URL:       ${DEST}"
           echo "Public Entry URL: https://storage.googleapis.com/${TARGET_BUCKET}/${TARGET_DIR}/assets/remoteEntry.js"
           echo "============================================================"
