@@ -91,11 +91,6 @@ jobs:
 | `workload_identity_provider` | No | `projects/518971663061/.../providers/github-provider` | GCP Workload Identity Provider resource URI. |
 | `service_account` | No | `gh-actions-deployer@mycommerce-508208.iam.gserviceaccount.com` | Service account to impersonate. |
 
-#### Optional Secrets (Fallback Only)
-| Name | Required | Description |
-| :--- | :---: | :--- |
-| `gcp_sa_key` | No | Legacy JSON key string (only needed if bypassing Workload Identity Federation). |
-
 ---
 
 ## 🔒 Security Architecture (Workload Identity Federation)
