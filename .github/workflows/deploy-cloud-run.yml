@@ -148,17 +148,19 @@ jobs:
             --allow-unauthenticated
 
       - name: Configure Cloud Run Environment Variables & Secrets
-        if: ${{ secrets.DATABASE_URL != '' || secrets.EXTRA_ENV_VARS != '' }}
+        env:
+          DB_URL: ${{ secrets.DATABASE_URL }}
+          EXTRA_VARS: ${{ secrets.EXTRA_ENV_VARS }}
         run: |
           ENV_PAIRS=""
-          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
-            ENV_PAIRS="DATABASE_URL=${{ secrets.DATABASE_URL }}"
+          if [ -n "$DB_URL" ]; then
+            ENV_PAIRS="DATABASE_URL=${DB_URL}"
           fi
-          if [ -n "${{ secrets.EXTRA_ENV_VARS }}" ]; then
+          if [ -n "$EXTRA_VARS" ]; then
             if [ -n "$ENV_PAIRS" ]; then
-              ENV_PAIRS="${ENV_PAIRS},${{ secrets.EXTRA_ENV_VARS }}"
+              ENV_PAIRS="${ENV_PAIRS},${EXTRA_VARS}"
             else
-              ENV_PAIRS="${{ secrets.EXTRA_ENV_VARS }}"
+              ENV_PAIRS="${EXTRA_VARS}"
             fi
           fi
           if [ -n "$ENV_PAIRS" ]; then
@@ -166,6 +168,8 @@ jobs:
               --region=${{ inputs.region }} \
               --update-env-vars="$ENV_PAIRS" \
               --quiet
+          else
+            echo "No additional environment variables to configure."
           fi
 
       - name: Verify Live Production Health Check
