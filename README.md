@@ -16,6 +16,8 @@ Central repository hosting reusable GitHub Actions workflows for **Hiljhil Roast
 
 | Workflow | File Path | Use Case |
 | :--- | :--- | :--- |
+| **Deploy to Cloud Run** | [`.github/workflows/deploy-cloud-run.yml`](.github/workflows/deploy-cloud-run.yml) | Builds FastAPI/Python Docker containers, keylessly authenticates to GCP via WIF, pushes to Artifact Registry, and deploys to Google Cloud Run with live health checks. |
+| **Database Migration & Seed** | [`.github/workflows/db-migration.yml`](.github/workflows/db-migration.yml) | Runs Alembic schema migrations and executes seed scripts against Neon / Cloud SQL PostgreSQL using repository secrets. |
 | **Deploy MFE to GCS** | [`.github/workflows/deploy-mfe-gcs.yml`](.github/workflows/deploy-mfe-gcs.yml) | Builds Vite/Webpack/Next.js MFEs, keylessly authenticates to GCP via WIF, syncs bundle to GCS bucket (`gs://mycommerce/`), and applies strict `no-cache` headers on `remoteEntry.js`. |
 | **MFE CI Validation** | [`.github/workflows/mfe-ci.yml`](.github/workflows/mfe-ci.yml) | Installs dependencies, runs TypeScript type-checking (`tsc --noEmit`), and verifies production builds for Pull Requests. |
 

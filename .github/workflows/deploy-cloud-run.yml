@@ -1,0 +1,190 @@
+name: Reusable Cloud Run Deployment
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: 'Cloud Run service identifier (e.g. content-service, product-catalog-service)'
+        required: true
+        type: string
+      port:
+        description: 'Container listening port (e.g. 8006, 8001)'
+        required: true
+        type: number
+      region:
+        description: 'Google Cloud region'
+        required: false
+        default: 'us-central1'
+        type: string
+      project_id:
+        description: 'Google Cloud project ID'
+        required: false
+        default: 'mycommerce-508208'
+        type: string
+      gar_repository:
+        description: 'Artifact Registry repository name'
+        required: false
+        default: 'services'
+        type: string
+      dockerfile:
+        description: 'Path to Dockerfile'
+        required: false
+        default: 'Dockerfile'
+        type: string
+      context:
+        description: 'Docker build context path'
+        required: false
+        default: '.'
+        type: string
+      memory:
+        description: 'Container memory limit'
+        required: false
+        default: '512Mi'
+        type: string
+      cpu:
+        description: 'Container CPU allocation'
+        required: false
+        default: '1'
+        type: string
+      min_instances:
+        description: 'Minimum instances for warmup'
+        required: false
+        default: '0'
+        type: string
+      max_instances:
+        description: 'Maximum instances for autoscaling'
+        required: false
+        default: '10'
+        type: string
+      health_check_path:
+        description: 'Path for health check smoke test'
+        required: false
+        default: '/api/v1/health'
+        type: string
+      workload_identity_provider:
+        description: 'GCP Workload Identity Provider URI'
+        required: false
+        default: 'projects/518971663061/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+        type: string
+      service_account:
+        description: 'Service Account to impersonate via WIF'
+        required: false
+        default: 'gh-actions-deployer@mycommerce-508208.iam.gserviceaccount.com'
+        type: string
+    secrets:
+      DATABASE_URL:
+        description: 'PostgreSQL database connection URL (Neon / Cloud SQL)'
+        required: false
+      EXTRA_ENV_VARS:
+        description: 'Additional comma-separated KEY=VALUE pairs'
+        required: false
+
+jobs:
+  deploy:
+    name: Build & Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Keyless WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ inputs.workload_identity_provider }}
+          service_account: ${{ inputs.service_account }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ inputs.project_id }}
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev --quiet
+
+      - name: Ensure Artifact Registry Repository Exists
+        run: |
+          gcloud artifacts repositories describe ${{ inputs.gar_repository }} \
+            --location=${{ inputs.region }} \
+            --project=${{ inputs.project_id }} 2>/dev/null || \
+          gcloud artifacts repositories create ${{ inputs.gar_repository }} \
+            --repository-format=docker \
+            --location=${{ inputs.region }} \
+            --description="MyCommerce backend container services" \
+            --project=${{ inputs.project_id }} --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/${{ inputs.gar_repository }}/${{ inputs.service_name }}:${{ github.sha }}
+            ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/${{ inputs.gar_repository }}/${{ inputs.service_name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy Container to Google Cloud Run
+        id: deploy_run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ inputs.service_name }}
+          image: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/${{ inputs.gar_repository }}/${{ inputs.service_name }}:${{ github.sha }}
+          region: ${{ inputs.region }}
+          flags: >-
+            --port=${{ inputs.port }}
+            --memory=${{ inputs.memory }}
+            --cpu=${{ inputs.cpu }}
+            --min-instances=${{ inputs.min_instances }}
+            --max-instances=${{ inputs.max_instances }}
+            --allow-unauthenticated
+
+      - name: Configure Cloud Run Environment Variables & Secrets
+        if: ${{ secrets.DATABASE_URL != '' || secrets.EXTRA_ENV_VARS != '' }}
+        run: |
+          ENV_PAIRS=""
+          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            ENV_PAIRS="DATABASE_URL=${{ secrets.DATABASE_URL }}"
+          fi
+          if [ -n "${{ secrets.EXTRA_ENV_VARS }}" ]; then
+            if [ -n "$ENV_PAIRS" ]; then
+              ENV_PAIRS="${ENV_PAIRS},${{ secrets.EXTRA_ENV_VARS }}"
+            else
+              ENV_PAIRS="${{ secrets.EXTRA_ENV_VARS }}"
+            fi
+          fi
+          if [ -n "$ENV_PAIRS" ]; then
+            gcloud run services update ${{ inputs.service_name }} \
+              --region=${{ inputs.region }} \
+              --update-env-vars="$ENV_PAIRS" \
+              --quiet
+          fi
+
+      - name: Verify Live Production Health Check
+        run: |
+          SERVICE_URL="${{ steps.deploy_run.outputs.url }}"
+          HEALTH_URL="${SERVICE_URL}${{ inputs.health_check_path }}"
+          echo "Waiting 5 seconds for Cloud Run revision routing..."
+          sleep 5
+          echo "Testing service health at: $HEALTH_URL"
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+          if [ "$STATUS_CODE" -ne 200 ]; then
+            echo "::warning::Smoke test returned HTTP $STATUS_CODE. Retrying in 5 seconds..."
+            sleep 5
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+          fi
+          if [ "$STATUS_CODE" -eq 200 ]; then
+            echo "Cloud Run deployment is healthy and responding (HTTP 200 OK)!"
+            curl -s "$HEALTH_URL"
+          else
+            echo "::error::Health check failed with HTTP $STATUS_CODE at $HEALTH_URL"
+            exit 1
+          fi
