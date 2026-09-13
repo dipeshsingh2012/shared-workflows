@@ -101,19 +101,30 @@ jobs:
           echo "Syncing ${DIST_DIR}/ to ${DEST}/"
           echo "============================================================"
           
-          # 1. Sync all assets, deleting orphaned files
+          # 1. Mirror assets to root of dist for Module Federation CSS/asset loader compatibility
+          # @originjs/vite-plugin-federation dynamicLoadingCss strips /assets/ and looks at root of base URL
+          if [ -d "${DIST_DIR}/assets" ]; then
+            echo "Mirroring ${DIST_DIR}/assets/ into ${DIST_DIR}/ for Module Federation loader compatibility..."
+            cp -n "${DIST_DIR}/assets"/* "${DIST_DIR}/" 2>/dev/null || true
+          fi
+
+          # 2. Sync all assets, deleting orphaned files
           gcloud storage rsync "${DIST_DIR}/" "${DEST}/" \
             --recursive \
             --delete-unmatched-destination-objects
 
-          # 2. Update cache control for remoteEntry.js so consumers always pull latest version
+          # 3. Update cache control for remoteEntry.js so consumers always pull latest version
           if [ -f "${DIST_DIR}/assets/remoteEntry.js" ]; then
             echo "Setting cache header on remoteEntry.js: ${REMOTE_CACHE}"
             gcloud storage objects update "${DEST}/assets/remoteEntry.js" \
               --cache-control="${REMOTE_CACHE}"
           fi
+          if [ -f "${DIST_DIR}/remoteEntry.js" ]; then
+            gcloud storage objects update "${DEST}/remoteEntry.js" \
+              --cache-control="${REMOTE_CACHE}" 2>/dev/null || true
+          fi
 
-          # 3. Update cache control for index.html if present
+          # 4. Update cache control for index.html if present
           if [ -f "${DIST_DIR}/index.html" ]; then
             echo "Setting cache header on index.html: ${HTML_CACHE}"
             gcloud storage objects update "${DEST}/index.html" \
