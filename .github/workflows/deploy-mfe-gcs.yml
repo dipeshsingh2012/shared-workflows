@@ -124,7 +124,14 @@ jobs:
               --cache-control="${REMOTE_CACHE}" 2>/dev/null || true
           fi
 
-          # 4. Update cache control for index.html if present
+          # 4. Update cache control for server SSR bundles if present
+          if [ -d "${DIST_DIR}/server" ]; then
+            echo "Setting cache header on server SSR bundles: ${REMOTE_CACHE}"
+            gcloud storage objects update "${DEST}/server/*" \
+              --cache-control="${REMOTE_CACHE}" 2>/dev/null || true
+          fi
+
+          # 5. Update cache control for index.html if present
           if [ -f "${DIST_DIR}/index.html" ]; then
             echo "Setting cache header on index.html: ${HTML_CACHE}"
             gcloud storage objects update "${DEST}/index.html" \
