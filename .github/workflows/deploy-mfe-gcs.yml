@@ -129,6 +129,8 @@ jobs:
             echo "Setting cache header on server SSR bundles: ${REMOTE_CACHE}"
             gcloud storage objects update "${DEST}/server/*" \
               --cache-control="${REMOTE_CACHE}" 2>/dev/null || true
+            gcloud storage objects update "${DEST}/server/**" \
+              --cache-control="${REMOTE_CACHE}" 2>/dev/null || true
           fi
 
           # 5. Update cache control for index.html if present
