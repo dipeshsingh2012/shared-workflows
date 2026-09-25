@@ -96,6 +96,7 @@ jobs:
         with:
           workload_identity_provider: ${{ inputs.workload_identity_provider }}
           service_account: ${{ inputs.service_account }}
+          project_id: ${{ inputs.project_id }}
 
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -140,6 +141,7 @@ jobs:
           image: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project_id }}/${{ inputs.gar_repository }}/${{ inputs.service_name }}:${{ github.sha }}
           region: ${{ inputs.region }}
           flags: >-
+            --project=${{ inputs.project_id }}
             --port=${{ inputs.port }}
             --memory=${{ inputs.memory }}
             --cpu=${{ inputs.cpu }}
@@ -165,6 +167,7 @@ jobs:
           fi
           if [ -n "$ENV_PAIRS" ]; then
             gcloud run services update ${{ inputs.service_name }} \
+              --project=${{ inputs.project_id }} \
               --region=${{ inputs.region }} \
               --update-env-vars="$ENV_PAIRS" \
               --quiet
